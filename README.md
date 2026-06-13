@@ -4,10 +4,12 @@ emoji: 🔍
 colorFrom: blue
 colorTo: indigo
 sdk: gradio
-sdk_version: "5.0"
-python_version: "3.12"
+sdk_version: 6.18.0
+python_version: '3.12'
 app_file: app.py
-pinned: false
+pinned: true
+license: mit
+short_description: urn any Git commit into a human-readable engineering report.
 ---
 
 # CommitLens — AI-Powered Commit Analysis
