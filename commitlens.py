@@ -307,22 +307,22 @@ def build_prompts(ctx: CommitContext) -> list[str]:
             sections.append("=== BEFORE CODE ===\n(file did not exist)\n")
 
         # After content
-        if fc.after_content is not None:
-            sections.append(
-                "=== AFTER CODE ===\n"
-                f"{fc.after_content}\n"
-            )
-        else:
-            sections.append("=== AFTER CODE ===\n(file was deleted)\n")
-
-        # Diff patch
-        # if fc.patch:
+        # if fc.after_content is not None:
         #     sections.append(
-        #         "=== DIFF ===\n"
-        #         f"{fc.patch}\n"
+        #         "=== AFTER CODE ===\n"
+        #         f"{fc.after_content}\n"
         #     )
         # else:
-        #     sections.append("=== DIFF ===\n(no patch available)\n")
+        #     sections.append("=== AFTER CODE ===\n(file was deleted)\n")
+
+        # Diff patch
+        if fc.patch:
+            sections.append(
+                "=== DIFF ===\n"
+                f"{fc.patch}\n"
+            )
+        else:
+            sections.append("=== DIFF ===\n(no patch available)\n")
 
         prompts.append("\n".join(sections))
 

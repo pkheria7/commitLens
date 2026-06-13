@@ -173,7 +173,7 @@ def _generate_batch(prompts: list[str]) -> list[str]:
     with torch.no_grad():
         out = _model.generate(
             **enc,
-            max_new_tokens=512,   # ≈ 200 words — enough for our tight prompt
+            max_new_tokens=2048,   # ≈ 200 words — enough for our tight prompt
             use_cache=True,
             do_sample=False,
             pad_token_id=_tokenizer.pad_token_id,
@@ -198,7 +198,7 @@ def _generate_sequential(prompts: list[str]) -> list[str]:
         with torch.no_grad():
             out = _model.generate(
                 **enc,
-                max_new_tokens=256,
+                max_new_tokens=1024,
                 use_cache=True,
                 do_sample=False,
                 pad_token_id=_tokenizer.pad_token_id,
