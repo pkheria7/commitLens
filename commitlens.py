@@ -286,12 +286,6 @@ def build_prompts(ctx: CommitContext) -> list[str]:
         "=== COMMIT METADATA ===\n"
         f"Message   : {ctx.message}\n"
         f"Author    : {ctx.author}\n"
-        f"Timestamp : {ctx.timestamp}\n"
-        "\n"
-        "=== COMMIT STATS ===\n"
-        f"Total files changed : {ctx.total_changed_files}\n"
-        f"Total additions     : {ctx.total_additions}\n"
-        f"Total deletions     : {ctx.total_deletions}\n"
     )
 
     for fc in ctx.files:
@@ -301,9 +295,6 @@ def build_prompts(ctx: CommitContext) -> list[str]:
         sections.append(
             "=== FILE ===\n"
             f"Filename : {fc.filename}\n"
-            f"Status   : {fc.status}\n"
-            f"Additions: {fc.additions}\n"
-            f"Deletions: {fc.deletions}\n"
         )
 
         # Before content
@@ -325,13 +316,13 @@ def build_prompts(ctx: CommitContext) -> list[str]:
             sections.append("=== AFTER CODE ===\n(file was deleted)\n")
 
         # Diff patch
-        if fc.patch:
-            sections.append(
-                "=== DIFF ===\n"
-                f"{fc.patch}\n"
-            )
-        else:
-            sections.append("=== DIFF ===\n(no patch available)\n")
+        # if fc.patch:
+        #     sections.append(
+        #         "=== DIFF ===\n"
+        #         f"{fc.patch}\n"
+        #     )
+        # else:
+        #     sections.append("=== DIFF ===\n(no patch available)\n")
 
         prompts.append("\n".join(sections))
 

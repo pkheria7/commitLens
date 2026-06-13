@@ -288,7 +288,7 @@ def process_repo(repo_url: str, token: str) -> dict:
     Returns: { "files": [{"name": str, "summary": str}], "report": str }
     """
     log.info("=== process_repo: %s ===", repo_url)
-
+    _model.to("cuda")   # move model to GPU for Mellum inference; stays in GPU until next @spaces.GPU call or app shutdown
     # Step 1 — fetch diff and build prompts
     prompts = run_pipeline(repo_url, token.strip() or None)
     log.info("Got %d file prompts from pipeline", len(prompts))
