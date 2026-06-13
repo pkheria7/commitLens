@@ -21,7 +21,6 @@ from commitlens import run_pipeline
 # Model config
 # ---------------------------------------------------------------------------
 
-# Switched to the base model repository for native PyTorch compatibility
 MODEL_REPO_ID = "JetBrains/Mellum2-12B-A2.5B-Thinking"
 
 SUMMARY_SYSTEM_PROMPT = (
@@ -51,16 +50,20 @@ _tokenizer = None
 def _get_llm():
     global _model, _tokenizer
     if _model is None:
-        # Configured for 8-bit quantization via bitsandbytes
+        # 8-bit quantization to fit in the 16GB System RAM bottleneck
         quantization_config = BitsAndBytesConfig(
             load_in_8bit=True,
         )
         
         _tokenizer = AutoTokenizer.from_pretrained(MODEL_REPO_ID)
+        
+        # Load model with hardware optimizations (Flash Attention 2 & bfloat16)
         _model = AutoModelForCausalLM.from_pretrained(
             MODEL_REPO_ID,
             quantization_config=quantization_config,
-            device_map="auto" # Automatically handles GPU placement
+            device_map="auto",
+            torch_dtype=torch.bfloat16,
+            attn_implementation="flash_attention_2"
         )
     return _model, _tokenizer
 
@@ -87,10 +90,13 @@ def _generate_response(system_prompt: str, user_prompt: str, max_tokens: int) ->
     
     inputs = tokenizer(formatted_prompt, return_tensors="pt").to("cuda")
     
+    # Generate with speed optimizations (KV Cache on, Greedy Decoding)
     outputs = model.generate(
         **inputs,
         max_new_tokens=max_tokens,
-        temperature=0.3
+        use_cache=True,     # Speeds up sequential token generation
+        do_sample=False,    # Greedy decoding for max speed (ignores temperature)
+        pad_token_id=tokenizer.eos_token_id # Silences the padding warning
     )
     
     # Decode and return just the generated response
@@ -98,12 +104,10 @@ def _generate_response(system_prompt: str, user_prompt: str, max_tokens: int) ->
     return response.strip()
 
 
-# Removed @spaces.GPU from individual helper functions
 def _summarize(prompt: str) -> str:
     return _generate_response(SUMMARY_SYSTEM_PROMPT, prompt, max_tokens=1024)
 
 
-# Removed @spaces.GPU from individual helper functions
 def _final_md(combined: str) -> str:
     return _generate_response(FINAL_SYSTEM_PROMPT, combined, max_tokens=2048)
 
@@ -112,9 +116,8 @@ def _final_md(combined: str) -> str:
 # Pipeline
 # ---------------------------------------------------------------------------
 
-# Placed a single @spaces.GPU decorator here to lock the GPU for the entire pipeline.
-# duration=120 ensures the GPU isn't preempted too early for large commits.
-@spaces.GPU(duration=120)
+# Single @spaces.GPU decorator with 300s timeout to survive the cold start
+@spaces.GPU(duration=300)
 def process_repo(repo_url: str, token: str, progress: gr.Progress = gr.Progress()):
     try:
         progress(0, desc="Running CommitLens pipeline...")
