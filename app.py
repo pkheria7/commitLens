@@ -12,7 +12,8 @@ from __future__ import annotations
 
 import gradio as gr
 import spaces
-from llama_cpp import Llama
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
 from commitlens import run_pipeline
 
@@ -20,8 +21,8 @@ from commitlens import run_pipeline
 # Model config
 # ---------------------------------------------------------------------------
 
-MODEL_REPO_ID = "JetBrains/Mellum2-12B-A2.5B-Thinking-GGUF-Q8_0"
-MODEL_FILENAME = "Mellum2-12B-A2.5B-Thinking-Q8_0.gguf"
+# Switched to the base model repository for native PyTorch compatibility
+MODEL_REPO_ID = "JetBrains/Mellum2-12B-A2.5B-Thinking"
 
 SUMMARY_SYSTEM_PROMPT = (
     "You are an expert code reviewer. Analyze the following commit change context "
@@ -43,19 +44,25 @@ FINAL_SYSTEM_PROMPT = (
 # Helpers
 # ---------------------------------------------------------------------------
 
-_llm = None
+_model = None
+_tokenizer = None
 
 
-def _get_llm() -> Llama:
-    global _llm
-    if _llm is None:
-        _llm = Llama.from_pretrained(
-            repo_id=MODEL_REPO_ID,
-            filename=MODEL_FILENAME,
-            verbose=False,
-            n_gpu_layers=-1,
+def _get_llm():
+    global _model, _tokenizer
+    if _model is None:
+        # Configured for 8-bit quantization via bitsandbytes
+        quantization_config = BitsAndBytesConfig(
+            load_in_8bit=True,
         )
-    return _llm
+        
+        _tokenizer = AutoTokenizer.from_pretrained(MODEL_REPO_ID)
+        _model = AutoModelForCausalLM.from_pretrained(
+            MODEL_REPO_ID,
+            quantization_config=quantization_config,
+            device_map="auto" # Automatically handles GPU placement
+        )
+    return _model, _tokenizer
 
 
 def _extract_filename(prompt: str) -> str:
@@ -65,36 +72,49 @@ def _extract_filename(prompt: str) -> str:
     return "unknown"
 
 
-@spaces.GPU
+def _generate_response(system_prompt: str, user_prompt: str, max_tokens: int) -> str:
+    model, tokenizer = _get_llm()
+    
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+    
+    # Format the prompt using the model's chat template
+    formatted_prompt = tokenizer.apply_chat_template(
+        messages, tokenize=False, add_generation_prompt=True
+    )
+    
+    inputs = tokenizer(formatted_prompt, return_tensors="pt").to("cuda")
+    
+    outputs = model.generate(
+        **inputs,
+        max_new_tokens=max_tokens,
+        temperature=0.3
+    )
+    
+    # Decode and return just the generated response
+    response = tokenizer.decode(outputs[0][inputs.input_ids.shape[-1]:], skip_special_tokens=True)
+    return response.strip()
+
+
+# Removed @spaces.GPU from individual helper functions
 def _summarize(prompt: str) -> str:
-    llm = _get_llm()
-    response = llm.create_chat_completion(
-        messages=[
-            {"role": "system", "content": SUMMARY_SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
-        ],
-        max_tokens=1024,
-    )
-    return response["choices"][0]["message"]["content"].strip()
+    return _generate_response(SUMMARY_SYSTEM_PROMPT, prompt, max_tokens=1024)
 
 
-@spaces.GPU
+# Removed @spaces.GPU from individual helper functions
 def _final_md(combined: str) -> str:
-    llm = _get_llm()
-    response = llm.create_chat_completion(
-        messages=[
-            {"role": "system", "content": FINAL_SYSTEM_PROMPT},
-            {"role": "user", "content": combined},
-        ],
-        max_tokens=2048,
-    )
-    return response["choices"][0]["message"]["content"].strip()
+    return _generate_response(FINAL_SYSTEM_PROMPT, combined, max_tokens=2048)
 
 
 # ---------------------------------------------------------------------------
 # Pipeline
 # ---------------------------------------------------------------------------
 
+# Placed a single @spaces.GPU decorator here to lock the GPU for the entire pipeline.
+# duration=120 ensures the GPU isn't preempted too early for large commits.
+@spaces.GPU(duration=120)
 def process_repo(repo_url: str, token: str, progress: gr.Progress = gr.Progress()):
     try:
         progress(0, desc="Running CommitLens pipeline...")
