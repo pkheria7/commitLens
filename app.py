@@ -1,10 +1,17 @@
 """
-CommitLens — Gradio UI (Dedicated T4 Medium Version)
+CommitLens — Gradio UI
+=======================
+- Asks for a GitHub repo URL (and optional PAT)
+- Runs commitlens.run_pipeline() to get per-file prompts
+- Feeds each prompt to Mellum 2 for a per-file summary
+- Combines all summaries and asks the model for a final .md report
+- Displays everything in the browser
 """
 
 from __future__ import annotations
 
 import gradio as gr
+import spaces
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
@@ -39,31 +46,33 @@ FINAL_SYSTEM_PROMPT = (
 _model = None
 _tokenizer = None
 
+
 def _get_llm():
     global _model, _tokenizer
     if _model is None:
-        # 8-bit quantization is mandatory to fit inside the T4's 16GB VRAM
+        # 8-bit quantization is required to bypass the 16GB ZeroGPU CPU RAM limit
         quantization_config = BitsAndBytesConfig(
             load_in_8bit=True,
         )
         
         _tokenizer = AutoTokenizer.from_pretrained(MODEL_REPO_ID)
         
-        # CHANGED: torch_dtype set to float16 (T4 does not support bfloat16)
-        # CHANGED: Removed Flash Attention (T4 relies on native SDPA instead)
+        # flash_attention_2 removed. PyTorch will automatically use native SDPA.
         _model = AutoModelForCausalLM.from_pretrained(
             MODEL_REPO_ID,
             quantization_config=quantization_config,
             device_map="auto",
-            torch_dtype=torch.float16, 
+            torch_dtype=torch.bfloat16 # ZeroGPU RTX 6000 natively supports bfloat16
         )
     return _model, _tokenizer
+
 
 def _extract_filename(prompt: str) -> str:
     for line in prompt.splitlines():
         if line.startswith("Filename :"):
             return line.split(":", 1)[1].strip()
     return "unknown"
+
 
 def _generate_response(system_prompt: str, user_prompt: str, max_tokens: int) -> str:
     model, tokenizer = _get_llm()
@@ -73,6 +82,7 @@ def _generate_response(system_prompt: str, user_prompt: str, max_tokens: int) ->
         {"role": "user", "content": user_prompt},
     ]
     
+    # Format the prompt using the model's chat template
     formatted_prompt = tokenizer.apply_chat_template(
         messages, tokenize=False, add_generation_prompt=True
     )
@@ -87,20 +97,25 @@ def _generate_response(system_prompt: str, user_prompt: str, max_tokens: int) ->
         pad_token_id=tokenizer.eos_token_id 
     )
     
+    # Decode and return just the generated response
     response = tokenizer.decode(outputs[0][inputs.input_ids.shape[-1]:], skip_special_tokens=True)
     return response.strip()
+
 
 def _summarize(prompt: str) -> str:
     return _generate_response(SUMMARY_SYSTEM_PROMPT, prompt, max_tokens=1024)
 
+
 def _final_md(combined: str) -> str:
     return _generate_response(FINAL_SYSTEM_PROMPT, combined, max_tokens=2048)
+
 
 # ---------------------------------------------------------------------------
 # Pipeline
 # ---------------------------------------------------------------------------
 
-# CHANGED: Removed @spaces.GPU entirely. The T4 is dedicated and always active.
+# Re-added the @spaces.GPU decorator with the 300-second timeout
+@spaces.GPU(duration=300)
 def process_repo(repo_url: str, token: str, progress: gr.Progress = gr.Progress()):
     try:
         progress(0, desc="Running CommitLens pipeline...")
@@ -128,6 +143,7 @@ def process_repo(repo_url: str, token: str, progress: gr.Progress = gr.Progress(
 
     except Exception as e:
         raise gr.Error(str(e))
+
 
 # ---------------------------------------------------------------------------
 # Gradio app

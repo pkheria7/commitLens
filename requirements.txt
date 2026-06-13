@@ -2,4 +2,5 @@ transformers
 accelerate
 bitsandbytes
 torch
+spaces
 gradio
