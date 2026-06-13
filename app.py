@@ -130,14 +130,14 @@ def _generate_response(system_prompt: str, user_prompt: str, max_tokens: int) ->
 def _summarize(prompt: str) -> str:
     log.info("Summarizing file ...")
     result = _generate_response(SUMMARY_SYSTEM_PROMPT, prompt, max_tokens=1024)
-    log.info("File summarization done.")
+    log.info("File summarization result:\n%s", result)
     return result
 
 
 def _final_md(combined: str) -> str:
     log.info("Generating final markdown report ...")
     result = _generate_response(FINAL_SYSTEM_PROMPT, combined, max_tokens=2048)
-    log.info("Final markdown report generated.")
+    log.info("Final markdown report result:\n%s", result)
     return result
 
 
@@ -166,6 +166,7 @@ def process_repo(repo_url: str, token: str, progress: gr.Progress = gr.Progress(
                 desc=f"Summarizing [{i+1}/{len(prompts)}] {fname}...",
             )
             summary = _summarize(prompt)
+            log.info("Summary for %s:\n%s", fname, summary)
             per_file_md_parts.append(f"## `{fname}`\n\n{summary}")
             log.info("Finished file %d/%d: %s", i + 1, len(prompts), fname)
 
@@ -207,9 +208,11 @@ with gr.Blocks(title="CommitLens", theme=gr.themes.Soft()) as demo:
 
     run_btn = gr.Button("Run Analysis", variant="primary", size="lg")
 
-    with gr.Row():
-        per_file_out = gr.Markdown(label="Per-File Summaries")
-        final_out = gr.Markdown(label="Final Report (.md)")
+    with gr.Tabs():
+        with gr.Tab("Per-File Summaries"):
+            per_file_out = gr.Markdown()
+        with gr.Tab("Final Report (.md)"):
+            final_out = gr.Markdown()
 
     run_btn.click(
         fn=process_repo,
