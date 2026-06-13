@@ -1,4 +1,6 @@
+--extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu121
+llama-cpp-python
+gradio
+huggingface_hub
 requests>=2.31.0
-gradio>=4.0.0
-llama-cpp-python>=0.2.0
 spaces>=0.4.0
