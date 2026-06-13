@@ -4,3 +4,4 @@ bitsandbytes
 torch
 spaces
 gradio
+groq
