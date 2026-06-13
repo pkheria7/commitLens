@@ -4,9 +4,10 @@ emoji: 🔍
 colorFrom: blue
 colorTo: indigo
 sdk: gradio
-sdk_version: 5.0
+sdk_version: "5.0"
+python_version: "3.12"
 app_file: app.py
-pinned: true
+pinned: false
 ---
 
 # CommitLens — AI-Powered Commit Analysis
