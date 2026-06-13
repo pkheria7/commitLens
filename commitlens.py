@@ -305,15 +305,15 @@ def build_prompts(ctx: CommitContext) -> list[str]:
         )
 
         # Before content
-        if fc.before_content is not None:
-            sections.append(
-                "=== BEFORE CODE ===\n"
-                f"{fc.before_content}\n"
-            )
-        else:
-            sections.append("=== BEFORE CODE ===\n(file did not exist)\n")
+        # if fc.before_content is not None:
+        #     sections.append(
+        #         "=== BEFORE CODE ===\n"
+        #         f"{fc.before_content}\n"
+        #     )
+        # else:
+        #     sections.append("=== BEFORE CODE ===\n(file did not exist)\n")
 
-        # After content
+        # # After content
         # if fc.after_content is not None:
         #     sections.append(
         #         "=== AFTER CODE ===\n"

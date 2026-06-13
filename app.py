@@ -39,7 +39,7 @@ log = logging.getLogger("commitlens")
 
 MODEL_REPO_ID   = "JetBrains/Mellum2-12B-A2.5B-Thinking"
 GROQ_MODEL      = "llama-3.3-70b-versatile"   # fast Groq-hosted 70B
-BATCH_TOKEN_BUDGET = 7000   # estimated input tokens; above this → sequential
+# BATCH_TOKEN_BUDGET = 7000   # estimated input tokens; above this → sequential
 
 # ---------------------------------------------------------------------------
 # Prompts
@@ -50,12 +50,16 @@ SUMMARY_SYSTEM_PROMPT = """\
 You are a senior code reviewer. Given a git diff for ONE file, output EXACTLY:
 - 1 sentence: what changed (be specific, name functions/classes if relevant)
 - 1 sentence: likely reason for the change
-- Up to 3 bullet points of notable patterns, risks, or issues (skip if none)
+
+Reason:
+- If the reason is explicitly evident from the diff, state it in 1 sentence.
+- Otherwise output exactly:
+  Reason not evident from the diff.
 
 Rules:
 - Total response MUST be under 120 words
 - No preamble, no "Sure!", no restating the filename
-- No internal reasoning, no <think> blocks — final answer only
+- No internal reasoning, no <tool_call> blocks — final answer only
 - Use plain text, no markdown headers
 """
 
