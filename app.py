@@ -277,43 +277,42 @@ async def homepage():
 
 
 @app.api(name="process_repo")
-@spaces.GPU(duration=240)      # reduced from 300 — summaries are now much shorter
+@spaces.GPU(duration=240)      
 def process_repo(repo_url: str, token: str) -> dict:
     """
     Full pipeline:
-      1. run_pipeline()  → raw per-file prompts            (CPU, fast)
-      2. Mellum 2 batch  → per-file summaries (≤120 words) (GPU, batched)
-      3. Groq 70B        → final markdown report (≤400 words) (API, ~3 s)
+      1. run_pipeline()  → Top 2 most changed file prompts   (CPU, fast)
+      2. Mellum 2 sequential → per-file summaries (.md format) (GPU, sequential)
+      3. Groq 70B        → final markdown summary report     (API, ~3 s)
 
     Returns: { "files": [{"name": str, "summary": str}], "report": str }
     """
     log.info("=== process_repo: %s ===", repo_url)
-    _model.to("cuda")   # move model to GPU for Mellum inference; stays in GPU until next @spaces.GPU call or app shutdown
-    # Step 1 — fetch diff and build prompts
+    _model.to("cuda")   # move model to GPU for Mellum inference
+    
+    # Step 1 — fetch diff and build prompts (Now limited to top 2 files from commitlens.py)
     prompts = run_pipeline(repo_url, token.strip() or None)
-    log.info("Got %d file prompts from pipeline", len(prompts))
+    log.info("Got %d file prompts from pipeline (capped at top 2)", len(prompts))
     if not prompts:
-        raise ValueError("No source-code files changed in the latest commit.")
+        raise ValueError("No matching source-code files changed in the latest commit.")
 
     fnames = [_extract_filename(p) for p in prompts]
 
-    # Step 2 — per-file summaries via Mellum 2 on GPU
+    # Step 2 — Force sequential execution through Mellum 2 on GPU
     mellum_prompts = [_build_mellum_prompt(p) for p in prompts]
-    summaries = _smart_generate(mellum_prompts)
+    summaries = _generate_sequential(mellum_prompts)
 
     file_results = [
         {"name": n, "summary": s}
         for n, s in zip(fnames, summaries)
     ]
-    log.info("Per-file summaries done")
+    log.info("Sequential per-file summaries done")
 
-    # Step 3 — final report via Groq (outside GPU, but still inside @spaces.GPU
-    # context — that's fine, the Groq call is pure HTTP and doesn't touch CUDA)
+    # Step 3 — Send the 2 .md summaries to Groq for final summary generation
     final_report = _generate_final_report_groq(file_results)
 
-    log.info("Pipeline complete — %d files", len(file_results))
+    log.info("Pipeline complete — processed top %d files", len(file_results))
     return {"files": file_results, "report": final_report}
-
 
 # ---------------------------------------------------------------------------
 # Boot

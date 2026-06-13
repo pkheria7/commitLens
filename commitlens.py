@@ -232,6 +232,13 @@ def fetch_commit_context(
     # Step 4 — filter files
     filtered: list[dict] = [f for f in raw_files if _should_keep(f["filename"])]
 
+    # --- NEW: Sort by total changes (additions + deletions) descending and take top 2 ---
+    filtered = sorted(
+        filtered, 
+        key=lambda x: x.get("additions", 0) + x.get("deletions", 0), 
+        reverse=True
+    )[:2]
+
     # Step 5 + 6 — build FileContext, fetch before/after content
     file_contexts: list[FileContext] = []
     for f in filtered:
