@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>CommitLens — AI Code Review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,900;1,400&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet"/>
+<!-- Gradio JS client for calling @app.api() endpoints -->
+<script type="module">
+import { Client } from "https://cdn.jsdelivr.net/npm/@gradio/client/dist/index.min.js";
+window._gradioClient = Client;
+</script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{background:#06060e;width:100%;min-height:100vh;font-family:'Space Mono',monospace;color:#e6edf3}
+
+/* ── Layout ── */
+#root{width:100%;min-height:100vh;display:flex;flex-direction:column;position:relative;overflow:hidden}
+canvas{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:0}
+
+.ui{flex:1;display:grid;grid-template-columns:1fr 1fr;z-index:2;position:relative;padding-bottom:44px}
+@media(max-width:780px){.ui{grid-template-columns:1fr}}
+
+/* ── Left panel ── */
+.left{padding:52px 44px;display:flex;flex-direction:column;justify-content:center;gap:28px}
+
+.pill{display:inline-flex;align-items:center;gap:8px;border:0.5px solid #1a3a1a;border-radius:100px;padding:6px 16px;width:fit-content}
+.pill-dot{width:5px;height:5px;border-radius:50%;background:#3fb950;animation:blink 2s infinite}
+.pill-text{font-size:9px;letter-spacing:.2em;color:#3fb950}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.15}}
+
+.headline{font-family:'Playfair Display',serif;line-height:1}
+.hl1{display:block;font-style:italic;font-weight:400;font-size:46px;color:#555;letter-spacing:-.01em}
+.hl2{display:block;font-style:normal;font-weight:900;font-size:58px;color:#fff;letter-spacing:-.02em;margin-top:2px}
+
+.desc{font-size:11px;color:#444;line-height:2;max-width:290px;letter-spacing:.02em}
+
+/* ── Form ── */
+.form-wrap{display:flex;flex-direction:column;gap:10px}
+.field-lbl{font-size:9px;letter-spacing:.2em;color:#666;text-transform:uppercase;margin-bottom:4px}
+.irow{display:flex;border:0.5px solid #1a1a2a;border-radius:9px;overflow:hidden;background:#0a0a14}
+.irow input{flex:1;height:44px;background:transparent;border:none;color:#e6edf3;font-size:12px;padding:0 16px;font-family:'Space Mono',monospace;outline:none}
+.irow input::placeholder{color:#2a2a3a}
+.run-btn{height:44px;padding:0 22px;background:#238636;border:none;color:#fff;font-size:10px;font-family:'Space Mono',monospace;cursor:pointer;letter-spacing:.1em;transition:background .15s,opacity .15s;white-space:nowrap}
+.run-btn:hover:not(:disabled){background:#2ea043}
+.run-btn:disabled{opacity:.45;cursor:not-allowed}
+.tok-row{display:flex;align-items:center;gap:10px}
+.tok-lbl{font-size:9px;color:#444;letter-spacing:.15em;flex-shrink:0}
+.tok-row input{flex:1;height:36px;background:#0a0a14;border:0.5px solid #1a1a2a;border-radius:7px;color:#888;font-size:11px;padding:0 12px;font-family:'Space Mono',monospace;outline:none}
+.tok-row input::placeholder{color:#252535}
+
+/* ── Status bar ── */
+.status{font-size:9px;letter-spacing:.15em;color:#1e3e2e;height:18px;transition:color .3s}
+.status.active{color:#3fb950}
+.status.error{color:#f85149}
+
+/* ── Output area ── */
+.out-area{display:flex;flex-direction:column;gap:0;min-height:160px}
+.tabs{display:flex;gap:0;border-bottom:0.5px solid #0e0e18;margin-bottom:14px}
+.tb{font-size:9px;letter-spacing:.16em;color:#333;cursor:pointer;padding-bottom:10px;margin-right:22px;border-bottom:1px solid transparent;transition:color .15s;text-transform:uppercase;background:none;border-top:none;border-left:none;border-right:none;font-family:'Space Mono',monospace}
+.tb.on{color:#58a6ff;border-bottom-color:#58a6ff}
+
+/* Per-file pane */
+#pane-f{display:none}
+#pane-f.on{display:block;max-height:320px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#1a1a2a transparent}
+.frow{display:flex;align-items:flex-start;gap:9px;padding:8px 0;border-bottom:0.5px solid #0b0b14;cursor:pointer;transition:background .1s;border-radius:4px}
+.frow:last-child{border:none}
+.frow:hover{background:#0d0d18}
+.dot{width:5px;height:5px;border-radius:50%;flex-shrink:0;margin-top:3px}
+.file-body{display:flex;flex-direction:column;gap:3px;flex:1;min-width:0}
+.fn{font-size:11px;color:#666;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fd{font-size:10px;color:#2a2a4a;font-style:italic;line-height:1.6;white-space:pre-wrap;word-break:break-word}
+.fd.expanded{color:#88aacc}
+
+/* Report pane */
+#pane-r{display:none}
+#pane-r.on{display:block;max-height:320px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#1a1a2a transparent}
+.rp{font-size:11px;color:#444;line-height:1.9;white-space:pre-wrap;word-break:break-word}
+.rp em{color:#58a6ff;font-style:normal}
+
+/* Empty state */
+.empty-state{display:flex;flex-direction:column;gap:6px;padding:20px 0}
+.es-line{height:10px;border-radius:3px;background:#0d0d18;animation:shimmer 2s infinite}
+.es-line:nth-child(1){width:80%}
+.es-line:nth-child(2){width:60%}
+.es-line:nth-child(3){width:70%}
+@keyframes shimmer{0%,100%{opacity:.3}50%{opacity:.6}}
+
+/* ── Right panel — hero git diagram ── */
+.right{position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden}
+#hero-svg{position:relative;z-index:2}
+
+/* ── Ticker ── */
+.ticker{position:fixed;bottom:0;left:0;right:0;z-index:10;padding:10px 0;border-top:0.5px solid #0c0c16;overflow:hidden;background:#06060e}
+.tk-track{display:flex;white-space:nowrap;animation:slide 36s linear infinite}
+.ti{font-size:9px;letter-spacing:.18em;color:#222;padding:0 30px;text-transform:uppercase;flex-shrink:0}
+.ti b{color:#1e2e3e}
+@keyframes slide{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+
+/* ── Detail overlay ── */
+#overlay{display:none;position:fixed;inset:0;background:rgba(6,6,14,.92);z-index:100;padding:40px;overflow-y:auto}
+#overlay.on{display:flex;flex-direction:column;gap:20px}
+.ov-head{display:flex;align-items:center;justify-content:space-between}
+.ov-title{font-size:14px;color:#58a6ff;letter-spacing:.05em}
+.ov-close{background:none;border:0.5px solid #1a1a2a;border-radius:6px;color:#666;font-size:11px;font-family:'Space Mono',monospace;padding:6px 14px;cursor:pointer;letter-spacing:.1em}
+.ov-close:hover{color:#e6edf3;border-color:#3a3a5a}
+.ov-body{font-size:12px;color:#8a9ab0;line-height:1.9;white-space:pre-wrap;word-break:break-word;max-width:760px}
+</style>
+</head>
+<body>
+
+<div id="root">
+  <canvas id="cv"></canvas>
+
+  <div class="ui">
+    <!-- LEFT -->
+    <div class="left">
+      <div class="pill"><span class="pill-dot"></span><span class="pill-text">AI · CODE REVIEW · LIVE</span></div>
+
+      <div class="headline">
+        <span class="hl1">the commits are</span>
+        <span class="hl2">already<br>judged.</span>
+      </div>
+
+      <p class="desc">Drop any GitHub repo. AI fetches the latest commit, reviews every changed file, returns structured markdown — instantly.</p>
+
+      <div class="form-wrap">
+        <div>
+          <div class="field-lbl">Repository</div>
+          <div class="irow">
+            <input type="text" placeholder="https://github.com/owner/repo" id="ri"/>
+            <button class="run-btn" id="runBtn" onclick="go()">→ RUN</button>
+          </div>
+        </div>
+        <div class="tok-row">
+          <span class="tok-lbl">TOKEN</span>
+          <input type="password" id="tok" placeholder="ghp_•••••••••• (optional)"/>
+        </div>
+      </div>
+
+      <div class="status" id="status">READY</div>
+
+      <div class="out-area">
+        <div class="tabs">
+          <button class="tb on" onclick="sw(this,'f')">Per-file</button>
+          <button class="tb" onclick="sw(this,'r')">Report</button>
+        </div>
+
+        <div id="pane-f" class="on">
+          <div class="empty-state" id="emptyF">
+            <div class="es-line"></div>
+            <div class="es-line"></div>
+            <div class="es-line"></div>
+          </div>
+        </div>
+
+        <div id="pane-r">
+          <div class="empty-state" id="emptyR">
+            <div class="es-line"></div>
+            <div class="es-line"></div>
+            <div class="es-line"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT — hero git diagram -->
+    <div class="right">
+      <svg id="hero-svg" viewBox="0 0 340 500" width="340" height="500" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <radialGradient id="ng" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#1a4a2e" stop-opacity="1"/>
+            <stop offset="100%" stop-color="#0a1a12" stop-opacity="1"/>
+          </radialGradient>
+          <radialGradient id="bg2" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#1a2a4a" stop-opacity="1"/>
+            <stop offset="100%" stop-color="#0a1020" stop-opacity="1"/>
+          </radialGradient>
+          <radialGradient id="rg" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#4a1a1a" stop-opacity="1"/>
+            <stop offset="100%" stop-color="#200a0a" stop-opacity="1"/>
+          </radialGradient>
+        </defs>
+        <!-- branch lines -->
+        <line x1="170" y1="40" x2="170" y2="460" stroke="#0f1f0f" stroke-width="1.5"/>
+        <line x1="170" y1="140" x2="260" y2="220" stroke="#0f1a0f" stroke-width="1"/>
+        <line x1="260" y1="220" x2="260" y2="340" stroke="#0f1a0f" stroke-width="1"/>
+        <line x1="260" y1="340" x2="170" y2="380" stroke="#0f1a0f" stroke-width="1"/>
+        <line x1="170" y1="200" x2="90" y2="260" stroke="#0f0f1a" stroke-width="1"/>
+        <line x1="90" y1="260" x2="90" y2="320" stroke="#0f0f1a" stroke-width="1"/>
+        <line x1="90" y1="320" x2="170" y2="340" stroke="#0f0f1a" stroke-width="1"/>
+        <!-- main branch commits -->
+        <circle cx="170" cy="60" r="14" fill="url(#ng)" stroke="#1a3a1a" stroke-width="0.5"/>
+        <text x="170" y="64" text-anchor="middle" font-size="8" fill="#3fb950" font-family="monospace">a1b2c</text>
+        <circle cx="170" cy="140" r="14" fill="url(#ng)" stroke="#1a3a1a" stroke-width="0.5"/>
+        <text x="170" y="144" text-anchor="middle" font-size="8" fill="#3fb950" font-family="monospace">d3e4f</text>
+        <circle cx="170" cy="200" r="14" fill="url(#ng)" stroke="#1a3a1a" stroke-width="0.5"/>
+        <text x="170" y="204" text-anchor="middle" font-size="8" fill="#3fb950" font-family="monospace">g5h6i</text>
+        <circle cx="170" cy="340" r="14" fill="url(#ng)" stroke="#1a3a1a" stroke-width="0.5"/>
+        <text x="170" y="344" text-anchor="middle" font-size="8" fill="#3fb950" font-family="monospace">merge</text>
+        <circle cx="170" cy="420" r="14" fill="url(#ng)" stroke="#1a3a1a" stroke-width="0.5"/>
+        <text x="170" y="424" text-anchor="middle" font-size="8" fill="#3fb950" font-family="monospace">HEAD</text>
+        <!-- feature branch commits -->
+        <circle cx="260" cy="240" r="12" fill="url(#bg2)" stroke="#1a2a4a" stroke-width="0.5"/>
+        <text x="260" y="244" text-anchor="middle" font-size="7" fill="#58a6ff" font-family="monospace">feat</text>
+        <circle cx="260" cy="300" r="12" fill="url(#bg2)" stroke="#1a2a4a" stroke-width="0.5"/>
+        <text x="260" y="304" text-anchor="middle" font-size="7" fill="#58a6ff" font-family="monospace">feat</text>
+        <!-- fix branch commits -->
+        <circle cx="90" cy="270" r="12" fill="url(#rg)" stroke="#4a1a1a" stroke-width="0.5"/>
+        <text x="90" y="274" text-anchor="middle" font-size="7" fill="#f85149" font-family="monospace">fix</text>
+        <circle cx="90" cy="310" r="12" fill="url(#rg)" stroke="#4a1a1a" stroke-width="0.5"/>
+        <text x="90" y="314" text-anchor="middle" font-size="7" fill="#f85149" font-family="monospace">fix</text>
+        <!-- labels -->
+        <text x="186" y="56" font-size="9" fill="#1a3a1a" font-family="monospace">main</text>
+        <text x="276" y="236" font-size="9" fill="#1a2a4a" font-family="monospace">feature/auth</text>
+        <text x="36" y="266" font-size="9" fill="#3a1a1a" font-family="monospace">fix/jwt</text>
+        <!-- HEAD label pill -->
+        <rect x="136" y="438" width="68" height="18" rx="9" fill="#0f2f1f" stroke="#1a4a2a" stroke-width="0.5"/>
+        <text x="170" y="451" text-anchor="middle" font-size="8" fill="#3fb950" font-family="monospace" letter-spacing=".08em">● HEAD</text>
+        <!-- AI review indicator -->
+        <rect x="100" y="10" width="140" height="22" rx="5" fill="#0a0a14" stroke="#1a1a2a" stroke-width="0.5"/>
+        <text x="170" y="25" text-anchor="middle" font-size="8" fill="#333" font-family="monospace" letter-spacing=".12em">AI REVIEWING...</text>
+        <rect id="prog" x="100" y="10" width="0" height="22" rx="5" fill="#238636" opacity=".15"/>
+      </svg>
+    </div>
+  </div>
+
+  <!-- Ticker -->
+  <div class="ticker">
+    <div class="tk-track" id="tk"></div>
+  </div>
+</div>
+
+<!-- Detail overlay -->
+<div id="overlay">
+  <div class="ov-head">
+    <span class="ov-title" id="ovTitle"></span>
+    <button class="ov-close" onclick="closeOverlay()">✕ CLOSE</button>
+  </div>
+  <pre class="ov-body" id="ovBody"></pre>
+</div>
+
+<script>
+// ── Ticker ──────────────────────────────────────────────────
+const tks = [
+  'git commit -m "reviewed by AI"',
+  '<b>●</b> live code review',
+  'feat: bulk import · fix: JWT expiry · chore: remove yaml',
+  'diff --git a/src b/src',
+  'HEAD~1 · origin/main · refs/heads/feat',
+  'mellum 2 · per-file summaries · final report',
+  'git push · <b>shipped</b>',
+  'five files · zero context switching'
+];
+const tkEl = document.getElementById('tk');
+tkEl.innerHTML = [...tks, ...tks, ...tks, ...tks, ...tks, ...tks]
+  .map(s => `<span class="ti">${s}&nbsp;&nbsp;/</span>`).join('');
+
+// ── Canvas particles ─────────────────────────────────────────
+const cv = document.getElementById('cv'), cc = cv.getContext('2d');
+let W, H;
+function rsz() { W = cv.width = window.innerWidth; H = cv.height = window.innerHeight; }
+
+const CMDS = ['feat: auth refactor','fix: JWT expiry','chore: rm yaml','docs: update readme','test: add coverage','perf: batch queries','refactor: middleware','feat: bulk import','ci: update actions','build: bump deps'];
+const EXTS = ['.ts','.py','.yml','.go','.rs','.tsx','.sql','.json','.sh','.md'];
+
+class Particle {
+  constructor(atBottom) { this.reset(atBottom); }
+  reset(atBottom) {
+    this.x = Math.random() * W;
+    this.y = atBottom ? H + 30 : Math.random() * H;
+    this.vx = (Math.random() - .5) * .25;
+    this.vy = -(Math.random() * .35 + .06);
+    this.a = Math.random() * .4 + .05;
+    this.type = Math.floor(Math.random() * 4);
+    this.ph = Math.random() * Math.PI * 2;
+    this.ps = Math.random() * .015 + .004;
+    this.sz = Math.random() * 2 + 1;
+    this.hue = [210, 142, 38, 275][Math.floor(Math.random() * 4)];
+    this.txt = this.type === 1 ? CMDS[Math.floor(Math.random() * CMDS.length)] :
+               this.type === 2 ? `src/module${EXTS[Math.floor(Math.random() * EXTS.length)]}` :
+               this.type === 3 ? `+${Math.floor(Math.random() * 40) + 1} -${Math.floor(Math.random() * 20) + 1}` : null;
+    this.w = this.txt ? (this.txt.length * 6.5 + 20) : 0;
+  }
+  draw(ctx) {
+    this.ph += this.ps;
+    const a = this.a * (.5 + .5 * Math.sin(this.ph));
+    ctx.save(); ctx.globalAlpha = a;
+    if (this.type === 0) {
+      ctx.beginPath(); ctx.arc(this.x, this.y, this.sz, 0, Math.PI * 2);
+      ctx.fillStyle = `hsl(${this.hue},40%,35%)`; ctx.fill();
+    } else {
+      const col = this.type === 1 ? 'hsl(142,30%,22%)' : this.type === 2 ? 'hsl(210,30%,16%)' : 'hsl(38,30%,18%)';
+      const tcol = this.type === 1 ? '#1a3a1a' : this.type === 2 ? '#1a2a3a' : '#3a2a0a';
+      ctx.fillStyle = col;
+      const h = 16, r = 4;
+      ctx.beginPath();
+      ctx.moveTo(this.x + r, this.y - h / 2);
+      ctx.lineTo(this.x + this.w - r, this.y - h / 2);
+      ctx.arcTo(this.x + this.w, this.y - h / 2, this.x + this.w, this.y, r);
+      ctx.arcTo(this.x + this.w, this.y + h / 2, this.x + this.w - r, this.y + h / 2, r);
+      ctx.lineTo(this.x + r, this.y + h / 2);
+      ctx.arcTo(this.x, this.y + h / 2, this.x, this.y, r);
+      ctx.arcTo(this.x, this.y - h / 2, this.x + r, this.y - h / 2, r);
+      ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = tcol; ctx.lineWidth = .5; ctx.stroke();
+      ctx.fillStyle = tcol; ctx.font = '9px monospace';
+      ctx.fillText(this.txt, this.x + 10, this.y + 3);
+    }
+    ctx.restore();
+    this.x += this.vx; this.y += this.vy;
+  }
+  dead() { return this.y < -30 || this.x < -220 || this.x > W + 220; }
+}
+
+let pts = [];
+rsz();
+for (let i = 0; i < 80; i++) pts.push(new Particle(false));
+function frame() {
+  cc.clearRect(0, 0, W, H);
+  pts.forEach(p => { p.draw(cc); if (p.dead()) p.reset(true); });
+  requestAnimationFrame(frame);
+}
+frame();
+window.addEventListener('resize', rsz);
+
+// ── Progress bar ─────────────────────────────────────────────
+let prog = 0;
+const progEl = document.getElementById('prog');
+setInterval(() => {
+  prog = (prog + .4) % 100;
+  progEl.setAttribute('width', prog * 1.4);
+}, 60);
+
+// ── Tabs ─────────────────────────────────────────────────────
+function sw(el, t) {
+  document.querySelectorAll('.tb').forEach(x => x.classList.remove('on'));
+  document.querySelectorAll('#pane-f,#pane-r').forEach(x => x.classList.remove('on'));
+  el.classList.add('on');
+  document.getElementById('pane-' + t).classList.add('on');
+}
+
+// ── Status helper ─────────────────────────────────────────────
+function setStatus(msg, cls = '') {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = 'status ' + cls;
+}
+
+// ── Dot color by extension ────────────────────────────────────
+function dotColor(name) {
+  const ext = name.split('.').pop().toLowerCase();
+  if (['ts','tsx','js','jsx'].includes(ext)) return '#58a6ff'; // blue — JS/TS
+  if (['py','rb','go','rs'].includes(ext)) return '#3fb950';   // green — backend
+  if (['yml','yaml','json','toml','env'].includes(ext)) return '#f85149'; // red — config
+  if (['md','txt','rst'].includes(ext)) return '#e3b341';       // yellow — docs
+  return '#8a9ab0';                                              // grey — other
+}
+
+// ── Render results ────────────────────────────────────────────
+function renderFiles(files) {
+  const pane = document.getElementById('pane-f');
+  if (!files || files.length === 0) {
+    pane.innerHTML = '<div class="rp" style="color:#2a3a2a">No files changed.</div>';
+    return;
+  }
+  pane.innerHTML = files.map((f, i) => `
+    <div class="frow" onclick="showDetail(${i})" data-idx="${i}">
+      <span class="dot" style="background:${dotColor(f.name)}"></span>
+      <div class="file-body">
+        <span class="fn">${f.name}</span>
+        <span class="fd">${(f.summary || '').slice(0, 120)}${(f.summary || '').length > 120 ? '…' : ''}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderReport(md) {
+  const pane = document.getElementById('pane-r');
+  pane.innerHTML = `<pre class="rp">${escHtml(md)}</pre>`;
+}
+
+function escHtml(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Detail overlay ────────────────────────────────────────────
+let _currentFiles = [];
+function showDetail(idx) {
+  const f = _currentFiles[idx];
+  if (!f) return;
+  document.getElementById('ovTitle').textContent = f.name;
+  document.getElementById('ovBody').textContent = f.summary || '';
+  document.getElementById('overlay').classList.add('on');
+}
+function closeOverlay() {
+  document.getElementById('overlay').classList.remove('on');
+}
+
+// ── Main: call Gradio API ─────────────────────────────────────
+async function go() {
+  const url = document.getElementById('ri').value.trim();
+  if (!url) return;
+  const token = document.getElementById('tok').value.trim();
+
+  const btn = document.getElementById('runBtn');
+  btn.disabled = true;
+  btn.textContent = '⌛ RUNNING';
+  setStatus('CONNECTING TO API...', 'active');
+
+  // Reset panes to loading state
+  document.getElementById('pane-f').innerHTML = `
+    <div class="empty-state">
+      <div class="es-line"></div><div class="es-line"></div><div class="es-line"></div>
+    </div>`;
+  document.getElementById('pane-r').innerHTML = `
+    <div class="empty-state">
+      <div class="es-line"></div><div class="es-line"></div><div class="es-line"></div>
+    </div>`;
+
+  try {
+    // gradio.Server exposes @app.api() functions at /gradio/api/<name>
+    // We use @gradio/client for proper queuing support
+    const Client = window._gradioClient;
+
+    // Connect to this same origin (gradio.Server is the host)
+    const client = await Client.connect(window.location.origin);
+
+    setStatus('PIPELINE RUNNING — THIS MAY TAKE A FEW MINUTES...', 'active');
+
+    const result = await client.predict("/process_repo", {
+      repo_url: url,
+      token: token,
+    });
+
+    // result.data[0] is the returned dict: { files: [...], report: "..." }
+    const data = result.data[0];
+    _currentFiles = data.files || [];
+
+    renderFiles(_currentFiles);
+    renderReport(data.report || '');
+
+    setStatus(`✓ DONE — ${_currentFiles.length} FILE(S) REVIEWED`, 'active');
+  } catch (err) {
+    console.error(err);
+    const msg = err?.message || String(err);
+    document.getElementById('pane-f').innerHTML = `<div class="rp" style="color:#f85149">${escHtml(msg)}</div>`;
+    document.getElementById('pane-r').innerHTML = `<div class="rp" style="color:#f85149">${escHtml(msg)}</div>`;
+    setStatus('ERROR: ' + msg.slice(0, 60), 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '→ RUN';
+  }
+}
+
+// Allow Enter key to submit
+document.getElementById('ri').addEventListener('keydown', e => {
+  if (e.key === 'Enter') go();
+});
+</script>
+</body>
+</html>
