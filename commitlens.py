@@ -237,7 +237,7 @@ def fetch_commit_context(
         filtered, 
         key=lambda x: x.get("additions", 0) + x.get("deletions", 0), 
         reverse=True
-    )[:2]
+    )
 
     # Step 5 + 6 — build FileContext, fetch before/after content
     file_contexts: list[FileContext] = []
@@ -305,22 +305,22 @@ def build_prompts(ctx: CommitContext) -> list[str]:
         )
 
         # Before content
-        # if fc.before_content is not None:
-        #     sections.append(
-        #         "=== BEFORE CODE ===\n"
-        #         f"{fc.before_content}\n"
-        #     )
-        # else:
-        #     sections.append("=== BEFORE CODE ===\n(file did not exist)\n")
+        if fc.before_content is not None:
+            sections.append(
+                "=== BEFORE CODE ===\n"
+                f"{fc.before_content}\n"
+            )
+        else:
+            sections.append("=== BEFORE CODE ===\n(file did not exist)\n")
 
-        # # After content
-        # if fc.after_content is not None:
-        #     sections.append(
-        #         "=== AFTER CODE ===\n"
-        #         f"{fc.after_content}\n"
-        #     )
-        # else:
-        #     sections.append("=== AFTER CODE ===\n(file was deleted)\n")
+        # After content
+        if fc.after_content is not None:
+            sections.append(
+                "=== AFTER CODE ===\n"
+                f"{fc.after_content}\n"
+            )
+        else:
+            sections.append("=== AFTER CODE ===\n(file was deleted)\n")
 
         # Diff patch
         if fc.patch:

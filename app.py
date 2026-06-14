@@ -37,7 +37,7 @@ log = logging.getLogger("commitlens")
 # Config
 # ---------------------------------------------------------------------------
 
-MODEL_REPO_ID   = "JetBrains/Mellum2-12B-A2.5B-Thinking"
+MODEL_REPO_ID   = "JetBrains/Mellum2-12B-A2.5B-Instruct"
 GROQ_MODEL      = "llama-3.3-70b-versatile"   # fast Groq-hosted 70B
 # BATCH_TOKEN_BUDGET = 7000   # estimated input tokens; above this → sequential
 
@@ -202,9 +202,9 @@ def _generate_sequential(prompts: list[str]) -> list[str]:
         with torch.no_grad():
             out = _model.generate(
                 **enc,
-                max_new_tokens=16000,
+                max_new_tokens=1024,
                 use_cache=True,
-                do_sample=False,
+                do_sample=True,
                 temperature=0.4,
                 top_p=0.95,
                 pad_token_id=_tokenizer.pad_token_id,
